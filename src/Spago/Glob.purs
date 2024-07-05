@@ -114,12 +114,11 @@ fsWalk cwd ignorePatterns includePatterns = Aff.makeAff \cb -> do
       let path = entryPath ent
       flip tailRecM
         0
-        ( \ix -> pure $ case Array.index ignoreMatchers ix of
-            Just h
-              | h path -> Done true
-              | otherwise -> Loop $ ix + 1
-            Nothing -> Done false
-        )
+        \ix -> pure $ case Array.index ignoreMatchers ix of
+          Just h
+            | h path -> Done true
+            | otherwise -> Loop $ ix + 1
+          Nothing -> Done false
 
     -- Should `fsWalk` recurse into this directory?
     deepFilter :: Entry -> Effect Boolean

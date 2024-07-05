@@ -132,15 +132,14 @@ spec = Spec.around globTmpDir do
             , "f130b33" -- 2024-07-05T14:21:47.000Z
             ]
 
+          now = liftEffect Now.now
+
           time :: Aff Unit -> Aff Milliseconds
-          time m = do
-            start <- liftEffect Now.now
-            m
-            end <- liftEffect Now.now
-            pure $ end `Instant.diff` start
-          tt commit = gitignoringGlobTimeTravel Promise.toAffE commit p [ "fruits/**/apple" ]
-        runs <- traverse tt commits
-        times <- traverse time $ void <$> runs
+          time m = pure (\start _ end -> end `Instant.diff` start) <*> now <*> m <*> now
+
+          setupOldGlob commit = gitignoringGlobTimeTravel Promise.toAffE commit p [ "fruits/**/apple" ]
+        oldGlobs <- traverse setupOldGlob commits
+        times <- traverse time $ void <$> oldGlobs
         head <- time $ void $ gitignoringGlob p ["fruits/**/apple"]
         let
           diff = unwrap head / ((sum $ unwrap <$> times) / Int.toNumber (Array.length times))
