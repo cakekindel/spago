@@ -125,8 +125,7 @@ fsWalk cwd ignorePatterns includePatterns = Aff.makeAff \cb -> do
     deepFilter entry = fromMaybe false <$> runMaybeT do
       isCanceled <- lift $ Ref.read canceled
       guard $ not isCanceled
-      ignore <- lift $ shouldIgnore entry
-      pure $ not ignore
+      not <$> lift (shouldIgnore entry)
 
     -- Should `fsWalk` retain this entry for the result array?
     entryFilter :: Entry -> Effect Boolean
