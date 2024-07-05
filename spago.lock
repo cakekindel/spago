@@ -427,7 +427,6 @@ workspace:
       test_dependencies:
         - exceptions
         - identity
-        - minibench
         - quickcheck
         - spec
       build_plan:
@@ -488,7 +487,6 @@ workspace:
         - lists
         - maybe
         - media-types
-        - minibench
         - mmorph
         - newtype
         - node-buffer
@@ -632,7 +630,6 @@ workspace:
         - lists
         - maybe
         - media-types
-        - minibench
         - mmorph
         - newtype
         - node-buffer
@@ -2362,18 +2359,6 @@ packages:
     dependencies:
       - newtype
       - prelude
-  minibench:
-    type: registry
-    version: 4.0.1
-    integrity: sha256-7jyxcklZI49q/otYvMV4f9YnJwEqQ3Me5buhDwAOydw=
-    dependencies:
-      - console
-      - effect
-      - integers
-      - numbers
-      - partial
-      - prelude
-      - refs
   mmorph:
     type: registry
     version: 7.0.0

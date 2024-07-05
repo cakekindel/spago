@@ -76,7 +76,6 @@ package:
     dependencies:
       - exceptions
       - identity
-      - minibench
       - quickcheck
       - spec
 workspace:
