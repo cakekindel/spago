@@ -2,31 +2,22 @@ module Test.Spago.Glob where
 
 import Test.Prelude
 
-import Control.Parallel (parTraverse)
 import Control.Promise (Promise)
 import Control.Promise as Promise
 import Data.Array as Array
-import Data.Codec.JSON (jobject, json)
-import Data.Codec.JSON as JSON
 import Data.DateTime.Instant as Instant
 import Data.Foldable (intercalate, sum)
 import Data.Int as Int
-import Data.Time.Duration (Milliseconds(..))
+import Data.Time.Duration (Milliseconds)
 import Effect.Aff as Aff
-import Effect.Console (log)
 import Effect.Now as Now
-import Foreign.Object as Object
-import JSON (JObject)
-import JSON as JSON
 import Node.Path as Path
 import Spago.FS as FS
 import Spago.Glob (gitignoringGlob)
 import Spago.Glob as Glob
-import Test.Assert (assert')
 import Test.Spec (Spec)
 import Test.Spec as Spec
 import Test.Spec.Assertions as Assert
-import Unsafe.Coerce (unsafeCoerce)
 
 type Commit = String
 foreign import gitignoringGlobTimeTravel
@@ -153,5 +144,4 @@ spec = Spec.around globTmpDir do
         head <- time $ void $ gitignoringGlob p ["fruits/**/apple"]
         let
           diff = unwrap head / ((sum $ unwrap <$> times) / Int.toNumber (Array.length times))
-        liftEffect $ log $ JSON.printIndented $ JSON.encode jobject $ (unsafeCoerce :: _ -> JObject) $ Object.fromFoldable $ Array.zip (commits <> ["HEAD"]) ((_ <> "ms") <$> show <$> unwrap <$> (times <> [head]))
         when (diff > 1.10) $ Assert.fail "`gitignoringGlob` performance regressed by more than 10%"
