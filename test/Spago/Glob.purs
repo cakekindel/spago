@@ -2,15 +2,39 @@ module Test.Spago.Glob where
 
 import Test.Prelude
 
+import Control.Parallel (parTraverse)
+import Control.Promise (Promise)
+import Control.Promise as Promise
 import Data.Array as Array
-import Data.Foldable (intercalate)
+import Data.Codec.JSON (jobject, json)
+import Data.Codec.JSON as JSON
+import Data.DateTime.Instant as Instant
+import Data.Foldable (intercalate, sum)
+import Data.Int as Int
+import Data.Time.Duration (Milliseconds(..))
 import Effect.Aff as Aff
+import Effect.Console (log)
+import Effect.Now as Now
+import Foreign.Object as Object
+import JSON (JObject)
+import JSON as JSON
 import Node.Path as Path
 import Spago.FS as FS
+import Spago.Glob (gitignoringGlob)
 import Spago.Glob as Glob
+import Test.Assert (assert')
 import Test.Spec (Spec)
 import Test.Spec as Spec
 import Test.Spec.Assertions as Assert
+import Unsafe.Coerce (unsafeCoerce)
+
+type Commit = String
+foreign import gitignoringGlobTimeTravel
+  :: (forall a. Effect (Promise a) -> Aff a)
+  -> Commit
+  -> String
+  -> Array String
+  -> Aff (Aff (Array String))
 
 globTmpDir :: (String -> Aff Unit) -> Aff Unit
 globTmpDir m = Aff.bracket make cleanup m
@@ -92,8 +116,8 @@ spec = Spec.around globTmpDir do
 
       Spec.it "is stacksafe" \p -> do
         let
-          chars = [ "a", "b", "c", "d", "e", "f", "g", "h" ]
-          -- 4000-line gitignore
+          chars = [ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k" ]
+          -- 10000-line gitignore
           words = [ \a b c d -> a <> b <> c <> d ] <*> chars <*> chars <*> chars <*> chars
           hugeGitignore = intercalate "\n" words
         -- Write it in a few places
@@ -103,3 +127,31 @@ spec = Spec.around globTmpDir do
         FS.writeTextFile (Path.concat [ p, "fruits", "right", ".gitignore" ]) hugeGitignore
         a <- Glob.gitignoringGlob p [ "fruits/**/apple" ]
         Array.sort a `Assert.shouldEqual` [ "fruits/left/apple", "fruits/right/apple" ]
+
+      Spec.it "performance does not regress" \p -> do
+        let
+          chars = [ "a", "b", "c", "d", "e", "f", "g", "h", "i", "j" ]
+          words = [ \a b c d -> a <> b <> c <> d ] <*> chars <*> chars <*> chars <*> chars
+          gitignore = intercalate "\n" words
+        FS.writeTextFile (Path.concat [ p, ".gitignore" ]) gitignore
+        let
+          commits =
+            [ "07987af" -- 2024-06-24T08:56:51.000Z
+            , "d401f1f" -- 2024-06-24T22:13:04.000Z
+            , "f130b33" -- 2024-07-05T14:21:47.000Z
+            ]
+
+          time :: Aff Unit -> Aff Milliseconds
+          time m = do
+            start <- liftEffect Now.now
+            m
+            end <- liftEffect Now.now
+            pure $ end `Instant.diff` start
+          tt commit = gitignoringGlobTimeTravel Promise.toAffE commit p [ "fruits/**/apple" ]
+        runs <- traverse tt commits
+        times <- traverse time $ void <$> runs
+        head <- time $ void $ gitignoringGlob p ["fruits/**/apple"]
+        let
+          diff = unwrap head / ((sum $ unwrap <$> times) / Int.toNumber (Array.length times))
+        liftEffect $ log $ JSON.printIndented $ JSON.encode jobject $ (unsafeCoerce :: _ -> JObject) $ Object.fromFoldable $ Array.zip (commits <> ["HEAD"]) ((_ <> "ms") <$> show <$> unwrap <$> (times <> [head]))
+        when (diff > 1.10) $ Assert.fail "`gitignoringGlob` performance regressed by more than 10%"

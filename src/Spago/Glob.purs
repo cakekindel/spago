@@ -4,6 +4,7 @@ import Spago.Prelude
 
 import Control.Alternative (guard)
 import Control.Monad.Maybe.Trans (runMaybeT)
+import Control.Monad.Rec.Class (Step(..), tailRecM)
 import Control.Monad.Trans.Class (lift)
 import Data.Array as Array
 import Data.Filterable (filter)
@@ -74,7 +75,7 @@ fsWalk cwd ignorePatterns includePatterns = Aff.makeAff \cb -> do
 
   -- Pattern for directories which can be outright ignored.
   -- This will be updated whenver a .gitignore is found.
-  ignoreMatcherRef :: Ref (String -> Boolean) <- Ref.new (testGlob { ignore: [], include: ignorePatterns })
+  ignoreMatcherRef :: Ref (Array (String -> Boolean)) <- Ref.new [ testGlob { ignore: [], include: ignorePatterns } ]
 
   -- If this Ref contains `true` because this Aff has been canceled, then deepFilter will always return false.
   canceled <- Ref.new false
@@ -100,38 +101,42 @@ fsWalk cwd ignorePatterns includePatterns = Aff.makeAff \cb -> do
           -- then add "node_modules" to `ignoreMatcher` but not ".spago"
           wouldConflictWithSearch matcher = any matcher includePatterns
 
-          newMatchers = or $ filter (not <<< wouldConflictWithSearch) gitignored
+          newMatchers = filter (not <<< wouldConflictWithSearch) gitignored
 
-          -- Another possible approach could be to keep a growing array of patterns and
-          -- regenerate the matcher on every gitignore. We have tried that (see #1234),
-          -- and turned out to be 2x slower. (see #1242, and #1244)
-          -- Composing functions is faster, but there's the risk of blowing the stack
-          -- (see #1231) - when this was introduced in #1210, every match from the
-          -- gitignore file would be `or`ed to the previous matcher, which would create
-          -- a very long (linear) call chain - in this latest iteration we are `or`ing the
-          -- new matchers together, then the whole thing with the previous matcher.
-          -- This is still prone to stack issues, but we now have a tree so it should
-          -- not be as dramatic.
-          addMatcher currentMatcher = or [ currentMatcher, newMatchers ]
+        Ref.modify_ (_ <> newMatchers) ignoreMatcherRef
 
-        Ref.modify_ addMatcher ignoreMatcherRef
+    entryPath :: Entry -> String
+    entryPath ent = withForwardSlashes $ Path.relative cwd ent.path
+
+    shouldIgnore :: Entry -> Effect Boolean
+    shouldIgnore ent = do
+      ignoreMatchers <- Ref.read ignoreMatcherRef
+      let path = entryPath ent
+      flip tailRecM
+        0
+        ( \ix -> pure $ case Array.index ignoreMatchers ix of
+            Just h
+              | h path -> Done true
+              | otherwise -> Loop $ ix + 1
+            Nothing -> Done false
+        )
 
     -- Should `fsWalk` recurse into this directory?
     deepFilter :: Entry -> Effect Boolean
     deepFilter entry = fromMaybe false <$> runMaybeT do
       isCanceled <- lift $ Ref.read canceled
       guard $ not isCanceled
-      shouldIgnore <- lift $ Ref.read ignoreMatcherRef
-      pure $ not $ shouldIgnore $ Path.relative cwd entry.path
+      ignore <- lift $ shouldIgnore entry
+      pure $ not ignore
 
     -- Should `fsWalk` retain this entry for the result array?
     entryFilter :: Entry -> Effect Boolean
     entryFilter entry = do
       when (isFile entry.dirent && entry.name == ".gitignore") do
         updateIgnoreMatcherWithGitignore entry
-      ignoreMatcher <- Ref.read ignoreMatcherRef
       let path = withForwardSlashes $ Path.relative cwd entry.path
-      pure $ includeMatcher path && not (ignoreMatcher path)
+      ignore <- shouldIgnore entry
+      pure $ includeMatcher path && not ignore
 
     options = { entryFilter, deepFilter }
 

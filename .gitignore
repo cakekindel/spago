@@ -16,3 +16,4 @@
 *.node
 **/.vscode
 **/.DS_Store
+.tmp
